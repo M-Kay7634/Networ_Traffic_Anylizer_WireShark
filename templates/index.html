@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>⚡ Packet Sentinels | Hacker Dashboard ⚡</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+</head>
+<body>
+<h1 class="heading">⚡ Packet Sentinels ⚡</h1>
+<h3 class="heading"><i><u>Network Traffic Analyzer | M'Kay</u></i></h3>
+
+<div class="upload-box">
+<form id="uploadForm" enctype="multipart/form-data">
+<input type="file" name="file" accept=".csv" required>
+<button>Upload & Hack</button>
+</form>
+<p id="loading" style="display:none;">Loading network insights...</p>
+</div>
+
+<div id="fileInfo" class="card" style="display:none;"><h2>📂 File Info</h2><p id="fileDetails"></p></div>
+<div id="summary" class="card" style="display:none;"><h2>📊 Summary</h2><p id="stats"></p></div>
+<div id="uniqueSection" class="card" style="display:none;">
+<h2>💻 Unique Sources & Protocols</h2>
+<p id="uniqueSources"></p>
+<p id="uniqueProtocols"></p>
+</div>
+
+<div id="charts" class="card" style="display:none;">
+<h2>Top Source IPs</h2><canvas id="sourceChart"></canvas>
+<h2>Top Protocols</h2><canvas id="protocolChart"></canvas>
+</div>
+
+<div id="destinationSection" class="card" style="display:none;">
+<h2>Top Destinations</h2>
+<canvas id="destinationChart"></canvas>
+</div>
+
+<div id="ipInfoSection" class="card" style="display:none;">
+<h2>🌍 IP Info</h2>
+<div id="ipInfo"></div>
+</div>
+
+<div id="protocolInfoSection" class="card" style="display:none;">
+<h2>🛠 Protocol Info</h2>
+<div id="protocolInfo"></div>
+</div>
+
+<div id="mapSection" class="card" style="display:none;">
+<h2>🗺 IP Locations (Top 15)</h2>
+<div id="map" style="height:450px;"></div>
+</div>
+
+<div id="previewSection" class="card" style="display:none;">
+<h2>🔍 Data Preview</h2>
+<table id="previewTable"></table>
+</div>
+
+<script>
+const form=document.getElementById("uploadForm");
+const neonColors=["#20ff14","#ff0000","#00e5ff","#ff00ff","#ffce56"];
+let map;
+
+function showSection(id){const el=document.getElementById(id);el.style.display="block";el.style.opacity=0;setTimeout(()=>{el.style.transition="opacity 0.6s";el.style.opacity=1;},50);}
+function updatePreviewTable(data){const table=document.getElementById("previewTable");table.innerHTML="";const header=document.createElement("tr");Object.keys(data[0]).forEach(col=>{const th=document.createElement("th");th.innerText=col;header.appendChild(th);});table.appendChild(header);data.forEach(row=>{const tr=document.createElement("tr");Object.values(row).forEach(v=>{const td=document.createElement("td");td.innerText=v;tr.appendChild(td);});table.appendChild(tr);});showSection("previewSection");}
+
+form.addEventListener("submit", async e=>{
+e.preventDefault();
+document.getElementById("loading").style.display="block";
+const formData=new FormData(form);
+const res=await fetch("/upload",{method:"POST",body:formData});
+document.getElementById("loading").style.display="none";
+if(!res.ok){alert(await res.text());return;}
+const data=await res.json();
+
+// File Info
+showSection("fileInfo");document.getElementById("fileDetails").innerText=
+`Name: ${data.file_info.name} | Size: ${data.file_info.size_kb} KB | Rows: ${data.file_info.rows} | Columns: ${data.file_info.columns}`;
+
+// Summary
+showSection("summary");document.getElementById("stats").innerText=
+`Total Packets: ${data.stats.total_packets} | Most Active Device: ${data.stats.most_active_device} | Most Used Protocol: ${data.stats.most_used_protocol}`;
+
+// Unique
+const uniqueSources=document.getElementById("uniqueSources");
+const uniqueProtocols=document.getElementById("uniqueProtocols");
+uniqueSources.innerHTML=`<b>Top Sources:</b> ${data.top_sources.labels.join(", ")}`;
+uniqueProtocols.innerHTML=`<b>Top Protocols:</b> ${data.top_protocols.labels.join(", ")}`;
+showSection("uniqueSection");
+
+// Charts
+showSection("charts");
+new Chart(document.getElementById("sourceChart"),{type:"bar",data:{labels:data.top_sources.labels,datasets:[{label:"Top IPs",data:data.top_sources.counts,backgroundColor:neonColors}]}})
+new Chart(document.getElementById("protocolChart"),{type:"bar",data:{labels:data.top_protocols.labels,datasets:[{label:"Top Protocols",data:data.top_protocols.counts,backgroundColor:neonColors}]}})
+if(data.top_destinations){showSection("destinationSection");new Chart(document.getElementById("destinationChart"),{type:"bar",data:{labels:data.top_destinations.labels,datasets:[{label:"Top Destinations",data:data.top_destinations.counts,backgroundColor:neonColors}]}})}
+
+// IP Info
+const ipInfoDiv=document.getElementById("ipInfo");ipInfoDiv.innerHTML="";
+for(const ip in data.top_sources.ip_info){
+const info=data.top_sources.ip_info[ip];
+ipInfoDiv.innerHTML+=`<b>${ip}</b> | ${info.city}, ${info.region}, ${info.country} | ISP: ${info.isp} | Threat: ${info.threat}<br>`;
+}
+showSection("ipInfoSection");
+
+// Protocol Info
+const protoDiv=document.getElementById("protocolInfo");protoDiv.innerHTML="";
+for(const proto in data.top_protocols.protocol_info){
+protoDiv.innerHTML+=`<b>${proto}</b> : ${data.top_protocols.protocol_info[proto]}<br>`;
+}
+showSection("protocolInfoSection");
+
+// Map
+showSection("mapSection");
+if(map){map.remove();}
+map=L.map("map").setView([20,0],2);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19}).addTo(map);
+for(const ip in data.top_sources.ip_info){
+const info=data.top_sources.ip_info[ip];
+if(info.lat && info.lon){
+const color=info.threat.includes("Malicious")?"#ff0000":"#00e5ff";
+L.circleMarker([info.lat,info.lon],{radius:10,color:color,fillOpacity:0.8}).addTo(map).bindPopup(`<b>${ip}</b><br>${info.city}, ${info.region}, ${info.country}<br>ISP: ${info.isp}<br>Threat: ${info.threat}`);
+}
+}
+
+// Preview
+if(data.preview.length>0)updatePreviewTable(data.preview);
+});
+</script>
+</body>
+</html>
