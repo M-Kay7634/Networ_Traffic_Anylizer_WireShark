@@ -113,5 +113,9 @@ def upload_file():
     except Exception as e:
         return f"Error processing file: {str(e)}", 500
 
-if __name__ == '__main__':
-    app.run(debug=True)
+# if __name__ == '__main__':        #for running in localhost
+#     app.run(debug=True)
+
+if __name__ == '__main__':          #for deploying on replit
+    app.run(host='0.0.0.0', port=8000)
+
